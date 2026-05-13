@@ -1,0 +1,41 @@
+{
+  "files": [
+    "micropython_esp32c6.bin",
+    "micropython_esp32h2.bin",
+    "momo_esp32h2_bmi160.bin",
+    "momo_esp32h2_bmi270.bin"
+  ],
+  "families": {
+    "esp32": {
+      "standard": [],
+      "micropython": []
+    },
+    "esp32c3": {
+      "standard": [],
+      "micropython": []
+    },
+    "esp32c5": {
+      "standard": [],
+      "micropython": []
+    },
+    "esp32c6": {
+      "standard": [],
+      "micropython": [
+        "micropython_esp32c6.bin"
+      ]
+    },
+    "esp32h2": {
+      "standard": [
+        "momo_esp32h2_bmi160.bin",
+        "momo_esp32h2_bmi270.bin"
+      ],
+      "micropython": [
+        "micropython_esp32h2.bin"
+      ]
+    },
+    "esp32s3": {
+      "standard": [],
+      "micropython": []
+    }
+  }
+}

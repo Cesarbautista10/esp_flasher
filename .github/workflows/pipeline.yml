@@ -41,6 +41,8 @@ jobs:
           mkdir -p docs
           cp -r esp_loader/dist/* docs/
           touch docs/.nojekyll
+          echo "Contents of docs/:"
+          ls -la docs/
 
       - name: Commit and Push Changes
         run: |
@@ -63,5 +65,4 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./docs
-          cname: esp-flasher.example.com
           force_orphan: true

@@ -1,0 +1,56 @@
+name: Build and Publish to docs/
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'esp_loader/**'
+      - '.github/workflows/publish.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        working-directory: ./esp_loader
+        run: npm ci
+
+      - name: Build app
+        working-directory: ./esp_loader
+        run: npm run build
+
+      - name: Clean docs directory
+        run: rm -rf docs/*
+
+      - name: Copy build to docs
+        run: cp -r esp_loader/dist/* docs/
+
+      - name: Create .nojekyll
+        run: touch docs/.nojekyll
+
+      - name: Commit and push changes
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add docs/
+          git commit -m "docs: publish app $(date +%Y-%m-%d\ %H:%M:%S)" || echo "No changes to commit"
+          git push
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: esp_loader/dist/
+          retention-days: 7

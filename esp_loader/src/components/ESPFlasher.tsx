@@ -13,6 +13,10 @@ export default function ESPFlasher() {
 
   const [firmwareName, setFirmwareName] = useState("");
 
+  const [availableFirmwares, setAvailableFirmwares] = useState<string[]>([]);
+
+  const [selectedFirmwareFile, setSelectedFirmwareFile] = useState("");
+
   const [flashAddress, setFlashAddress] = useState("0x0000");
 
   const [flashing, setFlashing] = useState(false);
@@ -20,6 +24,8 @@ export default function ESPFlasher() {
   const [progress, setProgress] = useState(0);
 
   const readerRef = useRef<any>(null);
+
+  const logsContainerRef = useRef<HTMLDivElement | null>(null);
 
   function getSerialApi() {
     return (navigator as Navigator & { serial?: any }).serial;
@@ -59,29 +65,103 @@ export default function ESPFlasher() {
     setLogs((prev) => prev + text);
   }
 
+  function getPublicUrls(filePath: string) {
+    const normalizedPath = filePath.startsWith("/")
+      ? filePath.slice(1)
+      : filePath;
+
+    const baseUrl = import.meta.env.BASE_URL ?? "/";
+    const primary = `${baseUrl}${normalizedPath}`;
+    const fallback = `/${normalizedPath}`;
+
+    return primary === fallback ? [primary] : [primary, fallback];
+  }
+
   async function delay(ms: number) {
     await new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  async function loadDefaultFirmware() {
+  async function loadFirmwareManifest() {
     try {
-      addLog("Cargando firmware por defecto...\n");
-      const firmwareUrl = `${import.meta.env.BASE_URL}firmware/momo.ino.merged.bin`;
-      const response = await fetch(firmwareUrl);
-      addLog(`Respuesta HTTP: ${response.status} ${response.statusText}\n`);
-      
-      if (!response.ok) {
-        addLog(`Error HTTP: ${response.statusText}\n`);
+      const manifestUrls = getPublicUrls("firmware/manifest.json");
+      let response: Response | null = null;
+
+      for (const manifestUrl of manifestUrls) {
+        const currentResponse = await fetch(manifestUrl, { cache: "no-store" });
+        if (currentResponse.ok) {
+          response = currentResponse;
+          break;
+        }
+      }
+
+      if (!response) {
+        addLog("No se pudo leer manifest.json (404)\n");
         return;
       }
+
+      const payload = await response.json();
+      const files = Array.isArray(payload)
+        ? payload
+        : Array.isArray(payload.files)
+          ? payload.files
+          : [];
+
+      const normalizedFiles = files.filter(
+        (file: unknown) =>
+          typeof file === "string" && file.toLowerCase().endsWith(".bin")
+      );
+
+      if (normalizedFiles.length === 0) {
+        addLog("No hay firmwares en manifest.json\n");
+        return;
+      }
+
+      setAvailableFirmwares(normalizedFiles);
+
+      setSelectedFirmwareFile((current) =>
+        current && normalizedFiles.includes(current)
+          ? current
+          : normalizedFiles[0]
+      );
+    } catch (err: any) {
+      console.error("Error cargando manifest:", err);
+      addLog(`Error cargando lista de firmwares: ${err.message}\n`);
+    }
+  }
+
+  async function loadDefaultFirmware() {
+    try {
+      if (!selectedFirmwareFile) {
+        addLog("Selecciona un firmware del menu\n");
+        return;
+      }
+
+      addLog(`Cargando firmware: ${selectedFirmwareFile}...\n`);
+      const firmwareUrls = getPublicUrls(`firmware/${selectedFirmwareFile}`);
+      let response: Response | null = null;
+
+      for (const firmwareUrl of firmwareUrls) {
+        const currentResponse = await fetch(firmwareUrl);
+        if (currentResponse.ok) {
+          response = currentResponse;
+          break;
+        }
+      }
+
+      if (!response) {
+        addLog("Error HTTP: 404 Not Found\n");
+        return;
+      }
+
+      addLog(`Respuesta HTTP: ${response.status} ${response.statusText}\n`);
       
       const blob = await response.blob();
       addLog(`Blob cargado: ${blob.size} bytes\n`);
       
-      const file = new File([blob], "momo.ino.merged.bin", { type: "application/octet-stream" });
+      const file = new File([blob], selectedFirmwareFile, { type: "application/octet-stream" });
       setFirmware(file);
-      setFirmwareName("momo.ino.merged.bin");
-      addLog(`✓ Firmware cargado: momo.ino.merged.bin (${file.size} bytes)\n`);
+      setFirmwareName(selectedFirmwareFile);
+      addLog(`✓ Firmware cargado: ${selectedFirmwareFile} (${file.size} bytes)\n`);
     } catch (err: any) {
       console.error("Error en loadDefaultFirmware:", err);
       addLog(`✗ Error cargando firmware: ${err.message}\n`);
@@ -428,6 +508,7 @@ export default function ESPFlasher() {
   }
 
   useEffect(() => {
+    void loadFirmwareManifest();
 
     return () => {
       disconnectESP();
@@ -435,44 +516,43 @@ export default function ESPFlasher() {
 
   }, []);
 
+  useEffect(() => {
+    const logsElement = logsContainerRef.current;
+    if (!logsElement) return;
+
+    logsElement.scrollTop = logsElement.scrollHeight;
+  }, [logs]);
+
+  const buttonClass =
+    "rounded-lg border border-sky-300/80 bg-sky-100 px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-sky-400 hover:bg-sky-200 disabled:cursor-not-allowed disabled:opacity-50";
+
+  const inputClass =
+    "rounded-lg border border-slate-300 bg-white/85 px-3 py-2 text-sm text-slate-700 placeholder:text-slate-400";
+
   return (
 
-    <div
-      style={{
-        background: "#111",
-        color: "#fff",
-        minHeight: "100vh",
-        padding: 20,
-        fontFamily: "Arial",
-      }}
-    >
+    <div className="mx-auto min-h-screen w-full max-w-6xl px-4 py-8 md:px-8">
 
-      <h1>ESP32 Web Flasher</h1>
+      <div className="rounded-2xl border border-slate-200 bg-white/85 p-5 shadow-lg shadow-sky-100/70 backdrop-blur md:p-8">
 
-      <div
-        style={{
-          display: "flex",
-          gap: 10,
-          marginBottom: 20,
-          flexWrap: "wrap",
-        }}
-      >
+        <div className="mb-6 flex flex-wrap items-center gap-2 md:gap-3">
 
         {!connected ? (
 
-          <button onClick={connectESP}>
+          <button className={buttonClass} onClick={connectESP}>
             Connect ESP32
           </button>
 
         ) : (
 
-          <button onClick={disconnectESP}>
+          <button className={buttonClass} onClick={disconnectESP}>
             Disconnect
           </button>
 
         )}
 
         <input
+          className={`${inputClass} file:mr-3 file:rounded-md file:border-0 file:bg-teal-300 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-slate-800 hover:file:bg-teal-200`}
           type="file"
           accept=".bin"
           onChange={(e) => {
@@ -489,31 +569,46 @@ export default function ESPFlasher() {
           }}
         />
 
-        <button onClick={loadDefaultFirmware}>
-          Load Default Firmware
+        <button
+          className={buttonClass}
+          onClick={loadDefaultFirmware}
+          disabled={!selectedFirmwareFile}
+        >
+          Load Selected Firmware
         </button>
 
+        <select
+          className={inputClass}
+          value={selectedFirmwareFile}
+          onChange={(e) => setSelectedFirmwareFile(e.target.value)}
+          disabled={availableFirmwares.length === 0}
+        >
+          {availableFirmwares.length === 0 && (
+            <option value="">No firmware found</option>
+          )}
+          {availableFirmwares.map((firmwareFile) => (
+            <option key={firmwareFile} value={firmwareFile}>
+              {firmwareFile}
+            </option>
+          ))}
+        </select>
+
         <input
+          className={inputClass}
           type="text"
           placeholder="Flash Address (e.g., 0x0000)"
           value={flashAddress}
           onChange={(e) => setFlashAddress(e.target.value)}
-          style={{
-            padding: 5,
-            borderRadius: 4,
-            border: "1px solid #666",
-            background: "#222",
-            color: "#fff",
-          }}
         />
 
         {firmwareName && (
-          <div style={{ color: "lime", fontSize: 14, padding: "5px 10px" }}>
+          <div className="rounded-md border border-emerald-300 bg-emerald-100 px-3 py-1.5 text-sm text-emerald-700">
             ✓ {firmwareName}
           </div>
         )}
 
         <button
+          className={buttonClass}
           onClick={flashFirmware}
           disabled={!connected || !firmware || flashing}
         >
@@ -521,6 +616,7 @@ export default function ESPFlasher() {
         </button>
 
         <button
+          className={buttonClass}
           onClick={eraseFlash}
           disabled={!connected || flashing}
         >
@@ -528,74 +624,48 @@ export default function ESPFlasher() {
         </button>
 
         <button
+          className={buttonClass}
           onClick={() => sendCommand("test")}
           disabled={!connected}
         >
           Send TEST
         </button>
 
-      </div>
+        </div>
+
+        <div className="mb-2 h-4 w-full overflow-hidden rounded-full border border-slate-300 bg-slate-100">
+
+          <div
+            className="h-full rounded-full bg-gradient-to-r from-sky-300 via-teal-300 to-emerald-300 transition-all duration-300"
+            style={{ width: `${progress}%` }}
+          />
+
+        </div>
+
+        <div className="mb-4 text-sm text-slate-600">
+          Progress: {progress}%
+        </div>
 
       <div
-        style={{
-          width: "100%",
-          height: 25,
-          background: "#333",
-          borderRadius: 10,
-          overflow: "hidden",
-          marginBottom: 20,
-        }}
-      >
-
-        <div
-          style={{
-            width: `${progress}%`,
-            height: "100%",
-            background: "lime",
-            transition: "0.2s",
-          }}
-        />
-
-      </div>
-
-      <div
-        style={{
-          marginBottom: 10,
-        }}
-      >
-        Progress: {progress}%
-      </div>
-
-      <div
-        style={{
-          background: "#000",
-          border: "1px solid #444",
-          padding: 10,
-          height: 450,
-          overflowY: "scroll",
-          whiteSpace: "pre-wrap",
-          fontFamily: "monospace",
-        }}
+        ref={logsContainerRef}
+        className="h-[430px] overflow-y-auto rounded-xl border border-slate-300 bg-slate-50 p-3 font-mono text-sm text-slate-700 whitespace-pre-wrap"
       >
         {logs}
       </div>
 
-      <div
-        style={{
-          marginTop: 20,
-        }}
-      >
+      <div className="mt-5 flex items-center gap-2 text-sm text-slate-600">
 
         Status:
 
-        <span
-          style={{
-            marginLeft: 10,
-            color: connected ? "lime" : "red",
-          }}
-        >
+        <span className={connected ? "font-semibold text-emerald-700" : "font-semibold text-rose-700"}>
           {connected ? "CONNECTED" : "DISCONNECTED"}
         </span>
+
+      </div>
+
+      <footer className="mt-6 border-t border-slate-200 pt-3 text-center text-xs text-slate-500">
+        Programador interno
+      </footer>
 
       </div>
 

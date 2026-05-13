@@ -1,0 +1,67 @@
+name: Auto Build & Publish to docs/
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: 'esp_loader/package-lock.json'
+
+      - name: Install Dependencies
+        working-directory: ./esp_loader
+        run: npm ci
+
+      - name: Build Application
+        working-directory: ./esp_loader
+        run: npm run build
+
+      - name: Prepare docs Directory
+        run: |
+          rm -rf docs/*
+          mkdir -p docs
+          cp -r esp_loader/dist/* docs/
+          touch docs/.nojekyll
+
+      - name: Commit and Push Changes
+        run: |
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+          git add docs/
+          git diff --quiet && git diff --staged --quiet || (git commit -m "chore: auto-publish build artifacts" && git push origin main)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ github.run_id }}
+          path: esp_loader/dist/
+          retention-days: 30
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./docs
+          cname: esp-flasher.example.com
+          force_orphan: true
